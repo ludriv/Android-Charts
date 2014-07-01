@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    
+    <declare-styleable name="PieChartView">
+
+        <!-- min = 0 / max in degrees -->
+        <attr name="max" format="integer" />
+        
+        <!-- color for default value or left value -->
+        <attr name="defaultColor" format="color" />
+        
+        <!-- creux ou non -->
+        <attr name="withPit" format="boolean" />
+        
+    </declare-styleable>
+    
+</resources>
