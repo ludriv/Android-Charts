@@ -18,6 +18,7 @@ public class PieChartActivity extends Activity
 		
 		pieChartView.addValue(0.52, Color.GREEN, "China");
 		pieChartView.addValue(0.16, Color.BLUE, "France");
-		pieChartView.addValue(0.20, Color.YELLOW, "Colombia");
+		pieChartView.addValue(0.20, Color.RED, "Brazil");
+		pieChartView.addValue(0.12, Color.MAGENTA, "Colombia");
 	}
 }

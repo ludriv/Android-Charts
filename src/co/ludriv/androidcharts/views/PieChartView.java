@@ -3,38 +3,41 @@ package co.ludriv.androidcharts.views;
 import java.util.ArrayList;
 
 import co.ludriv.androidcharts.R;
+import co.ludriv.androidcharts.evaluators.PointFEvaluator;
+import android.animation.ObjectAnimator;
 import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.PointF;
 import android.graphics.PorterDuff.Mode;
 import android.graphics.PorterDuffXfermode;
 import android.graphics.RectF;
 import android.util.AttributeSet;
-import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 
 public class PieChartView extends ViewGroup
 {
-	private final int DEFAULT_MAX			= 360;
-	private final int DEFAULT_START_ANGLE 	= -90;
-	private final int DEFAULT_COLOR			= Color.DKGRAY;
-	private final int DEFAULT_STROKE_WIDTH	= 0;
+	private final int 	DEFAULT_MAX_DEGREES		= 360;
+	private final int 	DEFAULT_START_ANGLE 	= -90;
+	private final int 	DEFAULT_COLOR			= Color.DKGRAY;
+	private final int 	DEFAULT_STROKE_WIDTH	= 0;
+	private final int	DEFAULT_HIGHLIGHT_ANIM_DURATION = 250;
 	
 	private Context _context;
 	
-	private int 	_max;
+	private int 	_maxDegrees;
 	private int		_defaultColor;
 	
-	private int 	_strokeWidth;
+	private float 	_donutStrokeWidth;
+	private int		_highlightAnimDuration;
 	
 	private Paint	_paint;
 	private RectF	_rectBounds;
-	private Paint 	clearPaint;
 	
 	private int 	_width;
 	private int 	_height;
@@ -72,8 +75,13 @@ public class PieChartView extends ViewGroup
 		
 		try 
 		{
-			_max = a.getInt(R.styleable.PieChartView_max, DEFAULT_MAX);
+			_maxDegrees = a.getInt(R.styleable.PieChartView_maxDegrees, DEFAULT_MAX_DEGREES);
 		    _defaultColor = a.getColor(R.styleable.PieChartView_defaultColor, DEFAULT_COLOR);
+		    
+		    _startAngle = a.getInt(R.styleable.PieChartView_startAngle, DEFAULT_START_ANGLE);
+		    
+		    _donutStrokeWidth = a.getDimension(R.styleable.PieChartView_donutStrokeWidth, DEFAULT_STROKE_WIDTH);
+		    _highlightAnimDuration = a.getInt(R.styleable.PieChartView_highlightAnimDuration, DEFAULT_HIGHLIGHT_ANIM_DURATION);
 		} 
 		finally 
 		{
@@ -85,19 +93,12 @@ public class PieChartView extends ViewGroup
 		_paint.setAntiAlias(true);
 		_paint.setColor(_defaultColor);
 		
-		clearPaint = new Paint();
-		clearPaint.setAntiAlias(true);
-		clearPaint.setXfermode(new PorterDuffXfermode(Mode.CLEAR));
-		clearPaint.setStyle(Paint.Style.FILL);
-	
-		_startAngle = DEFAULT_START_ANGLE;
-		_strokeWidth = DEFAULT_STROKE_WIDTH;
-		
 		_viewPadding = 20;
 		
 		_rectBounds = new RectF();
 		
 		setBackgroundColor(Color.TRANSPARENT);
+		setWillNotDraw(false);
 	}
 
 	public PieChartView(Context context, AttributeSet attrs, int defStyle)
@@ -120,7 +121,7 @@ public class PieChartView extends ViewGroup
 		else if (percent > 1)
 			percent = 1;
 		
-		PortionPieChartView portionView = new PortionPieChartView(_context);
+		PieChartSegmentView portionView = new PieChartSegmentView(_context);
 		portionView.setPortion(Portion.newObject(percent, color, label));
 		addView(portionView);
 	}
@@ -183,12 +184,12 @@ public class PieChartView extends ViewGroup
 		
 		for (int i = 0; i < getChildCount(); i++)
 		{
-			PortionPieChartView portionView = (PortionPieChartView) getChildAt(i);
+			PieChartSegmentView portionView = (PieChartSegmentView) getChildAt(i);
 			portionView.setRectF(_rectBounds);
 			portionView.setStartAngle(startAngle);
 			portionView.draw(canvas);
 			
-			startAngle += portionView._radius;
+			startAngle += portionView._cRadius;
 		}
 		
 	}
@@ -198,6 +199,11 @@ public class PieChartView extends ViewGroup
 	{
 		// TODO Auto-generated method stub
 		
+	}
+	
+	public void setStartAngle(int angle)
+	{
+		_startAngle = angle;
 	}
 	
 	private static class Portion
@@ -216,95 +222,143 @@ public class PieChartView extends ViewGroup
 		}
 	}
 	
-	private class PortionPieChartView extends View
+	private class PieChartSegmentView extends View
 	{
-		private Paint 	_paint;
-		private Paint	_clearPaint;
-		private Paint 	_tempPaint;
-		private RectF	_rectF;
-		private RectF	_clearRectF;
-		private float 	_radius;
-		private float 	_startAngle;
+		private final static int EXPANDED_MIN_OFFSET = 0;
+		private final static int EXPANDED_MAX_OFFSET = 12;
 		
-		private Portion _portion;
-		private Canvas  _refCanvas;
-		private Bitmap	_refBitmap;
+		private Paint 	_cPaint;
+		private Paint	_cClearPaint;
+		private Paint 	_cTempPaint;
+		private RectF	_cRectF;
+		private RectF	_cClearRectF;
+		private float 	_cRadius;
+		private float 	_cStartAngle;
+		
+		private Portion _cPortion;
+		private Canvas  _cRefCanvas;
+		private Bitmap	_cRefBitmap;
+
+		private PointF	_cOriginPoint;
 		
 
-		public PortionPieChartView(Context context)
+		public PieChartSegmentView(Context context)
 		{
 			super(context);
 			
-			_paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-			_paint.setStyle(Paint.Style.FILL);
+			_cPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+			_cPaint.setStyle(Paint.Style.FILL);
 			
-			_clearPaint = new Paint();
-			_clearPaint.setAntiAlias(true);
-			_clearPaint.setXfermode(new PorterDuffXfermode(Mode.CLEAR));
-			_clearPaint.setStyle(Paint.Style.FILL);
+			_cClearPaint = new Paint();
+			_cClearPaint.setAntiAlias(true);
+			_cClearPaint.setXfermode(new PorterDuffXfermode(Mode.CLEAR));
+			_cClearPaint.setStyle(Paint.Style.FILL);
 			
-			_clearRectF = new RectF();
+			_cClearRectF = new RectF();
 			
-			_tempPaint = new Paint();
+			_cTempPaint = new Paint();
 			
-			_refCanvas = new Canvas();
+			_cRefCanvas = new Canvas();
+			
+			_cOriginPoint = new PointF(0, 0);
 		}
 		
 		public void setPortion(Portion portion)
 		{
-			_portion = portion;
-			_radius = (float) (_portion.percent * _max);
-			_paint.setColor(portion.color);
+			_cPortion = portion;
+			_cRadius = (float) (_cPortion.percent * _maxDegrees);
+			_cPaint.setColor(portion.color);
 		}
 		
 		public void setRectF(RectF rectF)
 		{
-			_rectF = rectF;
+			_cRectF = rectF;
 		}
 		
 		public void setStartAngle(float startAngle)
 		{
-			_startAngle = startAngle;
+			_cStartAngle = startAngle;
+		}
+		
+		public void setOrigin(PointF pointF)
+		{
+			_cOriginPoint.x = pointF.x;
+			_cOriginPoint.y = pointF.y;
+			
+			PieChartView.this.invalidate();
 		}
 		
 		@Override
 		protected void onDraw(Canvas canvas)
 		{
 			super.onDraw(canvas);
-
-			if (_refBitmap == null || _refBitmap.getWidth() != canvas.getWidth() || _refBitmap.getHeight() != canvas.getHeight())
+			
+			if (_cRefBitmap == null || _cRefBitmap.getWidth() != canvas.getWidth() || _cRefBitmap.getHeight() != canvas.getHeight())
 			{
-				_refBitmap = Bitmap.createBitmap(canvas.getWidth(), canvas.getHeight(), Bitmap.Config.ARGB_8888);
+				_cRefBitmap = Bitmap.createBitmap(canvas.getWidth(), canvas.getHeight(), Bitmap.Config.ARGB_8888);
 			}
 			
-			_refCanvas.setBitmap(_refBitmap);
+			_cRefCanvas.setBitmap(_cRefBitmap);
 			
-			_refCanvas.drawArc(_rectF, _startAngle, _radius, true, _paint);
+			_cRefCanvas.drawArc(_cRectF, _cStartAngle, _cRadius, true, _cPaint);
 			
-			if (_strokeWidth > 0)
+			if (_donutStrokeWidth > 0)
 			{
-				_clearRectF.set(_rectF.left + _strokeWidth, _rectF.top + _strokeWidth, _rectF.right - _strokeWidth, _rectF.bottom - _strokeWidth);
-				_refCanvas.drawArc(_clearRectF, _startAngle - 2, _radius + 4, true, _clearPaint);
+				_cClearRectF.set(_cRectF.left + _donutStrokeWidth, _cRectF.top + _donutStrokeWidth, _cRectF.right - _donutStrokeWidth, _cRectF.bottom - _donutStrokeWidth);
+				_cRefCanvas.drawArc(_cClearRectF, _cStartAngle - 2, _cRadius + 4, true, _cClearPaint);
 			}
 			
-			canvas.drawBitmap(_refBitmap, 0, 0, _tempPaint);
+			canvas.drawBitmap(_cRefBitmap, _cOriginPoint.x, _cOriginPoint.y, _cTempPaint); // 0, 0
 		}
 		
 		@Override
 		public boolean onTouchEvent(MotionEvent event)
 		{
-			int pixelColor = _refBitmap.getPixel((int) event.getX(), (int) event.getY());
+			if (_cRefBitmap == null)
+			{
+				return false;
+			}
+			
+			int pixelColor = _cRefBitmap.getPixel((int) event.getX(), (int) event.getY());
 			int pixelAlpha = Color.alpha(pixelColor);
 			
 			if (pixelAlpha != 0)
 			{
 				// touch!
-				Log.d("Android-Charts-Pie", "touch: " + _portion.label);
+//				Log.d("Android-Charts-Pie", "touch: " + _cPortion.label);
+				
+				PointF fromPoint = this._cOriginPoint;
+				PointF toPoint = new PointF(EXPANDED_MIN_OFFSET, EXPANDED_MIN_OFFSET);
+
+				if (fromPoint.equals(EXPANDED_MIN_OFFSET, EXPANDED_MIN_OFFSET))
+				{
+					// open
+					float midAngle = (_cStartAngle * 2 + _cRadius) / 2;
+					float x = (float) Math.cos(Math.toRadians(midAngle));
+					float y = (float) Math.sin(Math.toRadians(midAngle));
+					
+					toPoint.set(x * EXPANDED_MAX_OFFSET, y * EXPANDED_MAX_OFFSET);
+				}
+				else
+				{
+					// close
+					toPoint.set(EXPANDED_MIN_OFFSET, EXPANDED_MIN_OFFSET);
+				}
+				
+				if (_highlightAnimDuration > 0)
+				{
+					ObjectAnimator animator = ObjectAnimator.ofObject(this, "origin", new PointFEvaluator(), fromPoint, toPoint);
+					animator.setDuration(_highlightAnimDuration);
+					animator.start();
+				}
+				else
+				{
+					setOrigin(toPoint);
+				}
 			}
 			
 			return super.onTouchEvent(event);
 		}
-		
 	}
 
 	

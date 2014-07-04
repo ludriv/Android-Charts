@@ -3,14 +3,20 @@
     
     <declare-styleable name="PieChartView">
 
-        <!-- min = 0 / max in degrees -->
-        <attr name="max" format="integer" />
+        <!-- start angle in degrees; by default: -90° -->
+        <attr name="startAngle" format="integer" />
         
+        <!-- min = 0 / max in degrees -->
+        <attr name="maxDegrees" format="integer" />
+
         <!-- color for default value or left value -->
         <attr name="defaultColor" format="color" />
         
-        <!-- creux ou non -->
-        <attr name="withPit" format="boolean" />
+        <!-- stroke width: 0 for full pie chart, 1+ for just stroke -->
+        <attr name="donutStrokeWidth" format="dimension" />
+        
+        <!-- duration for highlight animation; 250 as default -->
+        <attr name="highlightAnimDuration" format="integer" />
         
     </declare-styleable>
     
