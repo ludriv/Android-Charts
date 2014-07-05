@@ -271,7 +271,7 @@ public class PieChartView extends ViewGroup
 			_cPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 			_cPaint.setStyle(Paint.Style.FILL);
 			
-			_cClearPaint = new Paint();
+			_cClearPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 			_cClearPaint.setAntiAlias(true);
 			_cClearPaint.setXfermode(new PorterDuffXfermode(Mode.CLEAR));
 			_cClearPaint.setStyle(Paint.Style.FILL);
@@ -329,10 +329,10 @@ public class PieChartView extends ViewGroup
 			if (_donutStrokeWidth > 0)
 			{
 				_cClearRectF.set(_cRectF.left + _donutStrokeWidth, _cRectF.top + _donutStrokeWidth, _cRectF.right - _donutStrokeWidth, _cRectF.bottom - _donutStrokeWidth);
-				_cRefCanvas.drawArc(_cClearRectF, _cStartAngle - 2, _cAngle + 4, true, _cClearPaint);
+				_cRefCanvas.drawArc(_cClearRectF, _cStartAngle -10, _cAngle +20, true, _cClearPaint); //fix center clear color
 			}
 			
-			canvas.drawBitmap(_cRefBitmap, _cOriginPoint.x, _cOriginPoint.y, _cTempPaint); // 0, 0
+			canvas.drawBitmap(_cRefBitmap, _cOriginPoint.x, _cOriginPoint.y, _cTempPaint);
 		}
 		
 		@Override
