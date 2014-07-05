@@ -1,9 +1,11 @@
 package co.ludriv.androidcharts.views;
 
-import java.util.ArrayList;
-
 import co.ludriv.androidcharts.R;
 import co.ludriv.androidcharts.evaluators.PointFEvaluator;
+import co.ludriv.androidcharts.listeners.PieChartSegmentListener;
+import co.ludriv.androidcharts.models.PieChartSegment;
+import android.animation.Animator;
+import android.animation.Animator.AnimatorListener;
 import android.animation.ObjectAnimator;
 import android.content.Context;
 import android.content.res.TypedArray;
@@ -28,6 +30,9 @@ public class PieChartView extends ViewGroup
 	private final int 	DEFAULT_STROKE_WIDTH	= 0;
 	private final int	DEFAULT_HIGHLIGHT_ANIM_DURATION = 250;
 	
+	private final int 	HIGHLIGHT_MODE_ONE		= 0;
+	private final int 	HIGHLIGHT_MODE_MANY		= 1;
+	
 	private Context _context;
 	
 	private int 	_maxDegrees;
@@ -35,6 +40,7 @@ public class PieChartView extends ViewGroup
 	
 	private float 	_donutStrokeWidth;
 	private int		_highlightAnimDuration;
+	private int		_highlightMode;
 	
 	private Paint	_paint;
 	private RectF	_rectBounds;
@@ -48,8 +54,7 @@ public class PieChartView extends ViewGroup
 	private int 	_diameter;
 	
 	
-	private ArrayList<Portion> _portions = new ArrayList<PieChartView.Portion>();
-	
+	private PieChartSegmentListener _segmentListener;
 	
 	public PieChartView(Context context)
 	{
@@ -82,6 +87,8 @@ public class PieChartView extends ViewGroup
 		    
 		    _donutStrokeWidth = a.getDimension(R.styleable.PieChartView_donutStrokeWidth, DEFAULT_STROKE_WIDTH);
 		    _highlightAnimDuration = a.getInt(R.styleable.PieChartView_highlightAnimDuration, DEFAULT_HIGHLIGHT_ANIM_DURATION);
+		    
+		    _highlightMode = a.getInt(R.styleable.PieChartView_highlightMode, HIGHLIGHT_MODE_ONE);
 		} 
 		finally 
 		{
@@ -106,24 +113,6 @@ public class PieChartView extends ViewGroup
 		super(context, attrs, defStyle);
 		
 		_context = context;
-	}
-
-	/**
-	 * 
-	 * @param percent 0..1
-	 * @param color
-	 * @param label
-	 */
-	public void addValue(double percent, int color, String label)
-	{
-		if (percent < 0)
-			percent = 0;
-		else if (percent > 1)
-			percent = 1;
-		
-		PieChartSegmentView portionView = new PieChartSegmentView(_context);
-		portionView.setPortion(Portion.newObject(percent, color, label));
-		addView(portionView);
 	}
 	
 	@Override
@@ -189,7 +178,7 @@ public class PieChartView extends ViewGroup
 			portionView.setStartAngle(startAngle);
 			portionView.draw(canvas);
 			
-			startAngle += portionView._cRadius;
+			startAngle += portionView._cAngle;
 		}
 		
 	}
@@ -197,8 +186,30 @@ public class PieChartView extends ViewGroup
 	@Override
 	protected void onLayout(boolean changed, int left, int top, int right, int bottom)
 	{
-		// TODO Auto-generated method stub
+	}
+	
+	/**
+	 * Add segment to the pie chart
+	 * 
+	 * @param percent from 0 to 1
+	 * @param color resource color id
+	 * @param label title of segment
+	 */
+	public void addSegment(double percent, int color, String label)
+	{
+		if (percent < 0)
+			percent = 0;
+		else if (percent > 1)
+			percent = 1;
 		
+		PieChartSegmentView segmentView = new PieChartSegmentView(_context);
+		segmentView.setSegmentData(new PieChartSegment(percent, color, label));
+		addView(segmentView);
+	}
+	
+	public void setSegmentListener(PieChartSegmentListener listener)
+	{
+		_segmentListener = listener;
 	}
 	
 	public void setStartAngle(int angle)
@@ -206,19 +217,29 @@ public class PieChartView extends ViewGroup
 		_startAngle = angle;
 	}
 	
-	private static class Portion
+	private void deselectOtherSegments(PieChartSegmentView exceptSegmentView)
 	{
-		protected double percent;
-		protected int color;
-		protected String label;
-		
-		public static Portion newObject(double percent, int color, String label)
+		int count = getChildCount();
+		for (int i = 0; i < count; i++)
 		{
-			Portion p = new Portion();
-			p.percent = percent;
-			p.color = color;
-			p.label = label;
-			return p;
+			PieChartSegmentView segmentView = (PieChartSegmentView) getChildAt(i);
+			if (!segmentView.equals(exceptSegmentView) && segmentView.isHighlighted())
+			{
+				segmentView.close();
+			}
+		}
+	}
+	
+	public void closeAllChildren()
+	{
+		int count = getChildCount();
+		for (int i = 0; i < count; i++)
+		{
+			PieChartSegmentView segmentView = (PieChartSegmentView) getChildAt(i);
+			if (segmentView.isHighlighted())
+			{
+				segmentView.close();
+			}
 		}
 	}
 	
@@ -232,14 +253,15 @@ public class PieChartView extends ViewGroup
 		private Paint 	_cTempPaint;
 		private RectF	_cRectF;
 		private RectF	_cClearRectF;
-		private float 	_cRadius;
+		private float 	_cAngle;
 		private float 	_cStartAngle;
 		
-		private Portion _cPortion;
 		private Canvas  _cRefCanvas;
 		private Bitmap	_cRefBitmap;
-
 		private PointF	_cOriginPoint;
+		
+		private PieChartSegment _cSegment;
+		private boolean	_isHighlighted;
 		
 
 		public PieChartSegmentView(Context context)
@@ -261,13 +283,15 @@ public class PieChartView extends ViewGroup
 			_cRefCanvas = new Canvas();
 			
 			_cOriginPoint = new PointF(0, 0);
+			
+			_isHighlighted = false;
 		}
 		
-		public void setPortion(Portion portion)
+		public void setSegmentData(PieChartSegment segment)
 		{
-			_cPortion = portion;
-			_cRadius = (float) (_cPortion.percent * _maxDegrees);
-			_cPaint.setColor(portion.color);
+			_cSegment = segment;
+			_cAngle = (float) (_cSegment.getPercent() * _maxDegrees);
+			_cPaint.setColor(_cSegment.getColor());
 		}
 		
 		public void setRectF(RectF rectF)
@@ -300,12 +324,12 @@ public class PieChartView extends ViewGroup
 			
 			_cRefCanvas.setBitmap(_cRefBitmap);
 			
-			_cRefCanvas.drawArc(_cRectF, _cStartAngle, _cRadius, true, _cPaint);
+			_cRefCanvas.drawArc(_cRectF, _cStartAngle, _cAngle, true, _cPaint);
 			
 			if (_donutStrokeWidth > 0)
 			{
 				_cClearRectF.set(_cRectF.left + _donutStrokeWidth, _cRectF.top + _donutStrokeWidth, _cRectF.right - _donutStrokeWidth, _cRectF.bottom - _donutStrokeWidth);
-				_cRefCanvas.drawArc(_cClearRectF, _cStartAngle - 2, _cRadius + 4, true, _cClearPaint);
+				_cRefCanvas.drawArc(_cClearRectF, _cStartAngle - 2, _cAngle + 4, true, _cClearPaint);
 			}
 			
 			canvas.drawBitmap(_cRefBitmap, _cOriginPoint.x, _cOriginPoint.y, _cTempPaint); // 0, 0
@@ -327,37 +351,110 @@ public class PieChartView extends ViewGroup
 				// touch!
 //				Log.d("Android-Charts-Pie", "touch: " + _cPortion.label);
 				
-				PointF fromPoint = this._cOriginPoint;
-				PointF toPoint = new PointF(EXPANDED_MIN_OFFSET, EXPANDED_MIN_OFFSET);
-
-				if (fromPoint.equals(EXPANDED_MIN_OFFSET, EXPANDED_MIN_OFFSET))
+				if (_highlightMode == HIGHLIGHT_MODE_ONE)
 				{
-					// open
-					float midAngle = (_cStartAngle * 2 + _cRadius) / 2;
-					float x = (float) Math.cos(Math.toRadians(midAngle));
-					float y = (float) Math.sin(Math.toRadians(midAngle));
-					
-					toPoint.set(x * EXPANDED_MAX_OFFSET, y * EXPANDED_MAX_OFFSET);
-				}
-				else
-				{
-					// close
-					toPoint.set(EXPANDED_MIN_OFFSET, EXPANDED_MIN_OFFSET);
+					deselectOtherSegments(this);
 				}
 				
-				if (_highlightAnimDuration > 0)
-				{
-					ObjectAnimator animator = ObjectAnimator.ofObject(this, "origin", new PointFEvaluator(), fromPoint, toPoint);
-					animator.setDuration(_highlightAnimDuration);
-					animator.start();
-				}
-				else
-				{
-					setOrigin(toPoint);
-				}
+				setSelected(!_isHighlighted);
 			}
 			
 			return super.onTouchEvent(event);
+		}
+
+		public void setSelected(final boolean isSelected)
+		{
+			PointF fromPoint = this._cOriginPoint;
+			PointF toPoint = new PointF(EXPANDED_MIN_OFFSET, EXPANDED_MIN_OFFSET);
+			
+			if (isSelected)
+			{
+				// open
+				float midAngle = (_cStartAngle * 2 + _cAngle) / 2;
+				float x = (float) Math.cos(Math.toRadians(midAngle));
+				float y = (float) Math.sin(Math.toRadians(midAngle));
+				
+				toPoint.set(x * EXPANDED_MAX_OFFSET, y * EXPANDED_MAX_OFFSET);
+			}
+			else
+			{
+				// close
+				toPoint.set(EXPANDED_MIN_OFFSET, EXPANDED_MIN_OFFSET);
+			}
+			
+			if (_highlightAnimDuration > 0)
+			{
+				ObjectAnimator animator = ObjectAnimator.ofObject(this, "origin", new PointFEvaluator(), fromPoint, toPoint);
+				animator.setDuration(_highlightAnimDuration);
+				animator.addListener(new AnimatorListener()
+				{
+					@Override
+					public void onAnimationStart(Animator animation)
+					{
+					}
+					
+					@Override
+					public void onAnimationRepeat(Animator animation)
+					{
+					}
+					
+					@Override
+					public void onAnimationEnd(Animator animation)
+					{
+						_isHighlighted = isSelected;
+						
+						if (_segmentListener != null)
+						{
+							if (isSelected)
+							{
+								_segmentListener.onSegmentSelected(PieChartView.this, _cSegment);
+							}
+							else
+							{
+								_segmentListener.onSegmentDeselected(PieChartView.this, _cSegment);
+							}
+						}
+					}
+					
+					@Override
+					public void onAnimationCancel(Animator animation)
+					{
+					}
+				});
+				animator.start();
+			}
+			else
+			{
+				setOrigin(toPoint);
+				_isHighlighted = isSelected;
+				
+				if (_segmentListener != null)
+				{
+					if (isSelected)
+					{
+						_segmentListener.onSegmentSelected(PieChartView.this, _cSegment);
+					}
+					else
+					{
+						_segmentListener.onSegmentDeselected(PieChartView.this, _cSegment);
+					}
+				}
+			}
+		}
+		
+		public void open()
+		{
+			setSelected(true);
+		}
+		
+		public void close()
+		{
+			setSelected(false);
+		}
+		
+		public boolean isHighlighted()
+		{
+			return _isHighlighted;
 		}
 	}
 

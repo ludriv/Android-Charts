@@ -18,6 +18,8 @@
         android:layout_width="match_parent"
         android:layout_height="300dp"
         android:layout_marginTop="10dp"
+        ludriv:donutStrokeWidth="30dp"
+        ludriv:highlightMode="one"
         ludriv:maxDegrees="360" />
 
 </LinearLayout>

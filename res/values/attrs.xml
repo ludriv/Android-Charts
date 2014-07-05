@@ -18,6 +18,11 @@
         <!-- duration for highlight animation; 250 as default -->
         <attr name="highlightAnimDuration" format="integer" />
         
+        <attr name="highlightMode">
+            <enum name="one" value="0" />
+            <enum name="many" value="1" />
+        </attr>
+        
     </declare-styleable>
     
 </resources>
